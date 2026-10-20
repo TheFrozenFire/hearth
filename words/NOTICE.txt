@@ -1,0 +1,24 @@
+Hearth word list
+================
+
+The playable list in words.txt is built from two places:
+
+1. ENABLE (Enhanced North American Benchmark Lexicon), a public-domain
+   word list compiled by Alan Beale with help from many people. Words
+   longer than 15 letters are left out, because they cannot be played
+   on this board. A common source for the file is:
+
+     https://raw.githubusercontent.com/dolph/dictionary/master/enable1.txt
+
+2. words/supplement.txt, a short list of extra words added for this
+   game: common modern words (email, selfie, wifi, and so on), the
+   short words qi, za, da, oi, po, and te, and everyday Canadian and
+   British spellings such as colour, centre, and favourite.
+
+A short set of slurs is removed so the computer player does not play
+them. The removed words are identified by hash in tools/block.sha256.
+tools/build-wordlist.py rebuilds words.txt.
+
+Scrabble is a trademark of its owners. Hearth is an independent game
+that uses the familiar kitchen-table rules. It is not approved by or
+connected with those owners.
