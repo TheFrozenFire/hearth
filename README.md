@@ -26,7 +26,7 @@ You go first against Nell, or you pass one phone back and forth for two people. 
 - **Swap** needs at least seven tiles left in the bag, and it uses the turn.
 - Six turns in a row with no points ends the game.
 
-Leave a game and it is still there on the start screen. Clearing the browser's saved data for this site removes it.
+Leave a game and it is still there on the start screen. Switching away, to send a message or lock the phone, brings the same game back. Clearing the browser's saved data for this site removes it.
 
 ## Words
 

@@ -209,7 +209,7 @@ function visiblePlayer() {
 }
 
 function refreshPreview() {
-  if (!game || ui.pending.length === 0) {
+  if (!game || ui.pending.length === 0 || !ui.dictReady) {
     ui.preview = null;
     ui.previewText = "";
   } else {
@@ -320,6 +320,7 @@ function tapSquare(row, col) {
 
 function commitPlay(allowUnknown) {
   if (!myTurn()) return;
+  if (!ui.dictReady) return;
   if (ui.pending.length === 0) {
     setStatus("Place at least one tile.", false);
     render();
@@ -462,24 +463,29 @@ function start(mode) {
   render();
 }
 
-function continueGame() {
-  const loaded = loadGame();
-  if (!loaded) return;
+function restoreGame(loaded) {
   game = loaded.game;
   ui.pending = loaded.pending || [];
   ui.selectedId = null;
   ui.sheet = null;
   ui.suggestion = null;
   ui.thinking = false;
-  ui.between = false;
   ui.exchanging = false;
+  ui.marked = new Set();
+  ui.between = !!loaded.between;
   ui.screen = game.phase === "over" ? "over" : "game";
   refreshPreview();
-  if (game.phase === "play" && game.players[game.turn].isBot) askBot();
+  if (game.phase === "play" && !ui.between && game.players[game.turn].isBot) askBot();
   else {
-    setStatus(game.phase === "play" ? `${game.players[game.turn].name}'s turn.` : "");
+    setStatus(loaded.status || (game.phase === "play" ? `${game.players[game.turn].name}'s turn.` : ""));
     render();
   }
+}
+
+function continueGame() {
+  const loaded = loadGame();
+  if (!loaded) return;
+  restoreGame(loaded);
 }
 
 function save() {
@@ -500,6 +506,8 @@ function save() {
       phase: game.phase,
       end: game.end,
       pending: ui.pending,
+      between: ui.between,
+      status: ui.status,
     }));
   } catch {
     // Private mode can refuse storage. The game still plays.
@@ -514,7 +522,12 @@ function loadGame() {
     const data = JSON.parse(raw);
     if (!data || data.v !== 1 || !data.players) return null;
     data.extraSet = new Set(data.extraWords || []);
-    return { game: data, pending: data.pending || [] };
+    return {
+      game: data,
+      pending: data.pending || [],
+      between: !!data.between,
+      status: typeof data.status === "string" ? data.status : "",
+    };
   } catch {
     return null;
   }
@@ -649,6 +662,7 @@ window.addEventListener("keydown", (event) => {
     ui.exchanging = false;
     refreshPreview();
     render();
+    save();
     return;
   }
   if (ui.screen !== "game" || ui.sheet || ui.between || !myTurn()) return;
@@ -689,12 +703,23 @@ window.addEventListener("keydown", (event) => {
 });
 
 if (location.hostname.endsWith("github.io") && "serviceWorker" in navigator) {
-  navigator.serviceWorker.register("sw.js").catch(() => {});
+  navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).catch(() => {});
 }
 
+function persistOnHide() {
+  if (document.visibilityState === "hidden") save();
+}
+
+document.addEventListener("visibilitychange", persistOnHide);
+window.addEventListener("pagehide", () => save());
+
 loadSettings();
-refreshSaved();
-render();
+const saved = loadGame();
+if (saved && saved.game.phase === "play") restoreGame(saved);
+else {
+  refreshSaved();
+  render();
+}
 
 loadWords().then((text) => {
   const words = text.trim().split(/\n+/);
@@ -702,6 +727,7 @@ loadWords().then((text) => {
   ui.wordCount = words.length;
   ui.dictReady = true;
   ui.loadPct = 100;
+  refreshPreview();
   bootWorker(text);
   render();
 }).catch(() => {

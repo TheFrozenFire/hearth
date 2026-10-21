@@ -330,6 +330,15 @@ h1 {
 .sq.tl { background: #2f5f9a; }
 .sq.dl { background: #b7d3ea; color: #1c3348; }
 .sq.cursor { box-shadow: inset 0 0 0 2px #f3d78a; }
+.sq.snap { box-shadow: inset 0 0 0 3px #f3d78a; z-index: 1; }
+
+#drag-tile.snapped {
+  transition: left 80ms ease-out, top 80ms ease-out, width 80ms ease-out, height 80ms ease-out;
+  box-shadow:
+    0 1px 0 #fff inset,
+    0 8px 16px rgba(70, 36, 16, 0.28),
+    0 0 0 3px #f3d78a;
+}
 
 .sq-label, .star-mark {
   font-weight: 800;
@@ -592,4 +601,5 @@ h1 {
 
 @media (prefers-reduced-motion: reduce) {
   .frame.shake, .score.thinking, .tile.selected { animation: none; transform: none; }
+  #drag-tile.snapped { transition: none; }
 }

@@ -1,4 +1,4 @@
-const CACHE = "hearth-v1";
+const CACHE = "hearth-v2";
 const ASSETS = [
   "./",
   "./index.html",
@@ -31,11 +31,18 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
-  event.respondWith(
-    caches.match(event.request).then((cached) => cached || fetch(event.request).then((response) => {
-      const copy = response.clone();
-      caches.open(CACHE).then((cache) => cache.put(event.request, copy)).catch(() => {});
+  event.respondWith((async () => {
+    try {
+      const response = await fetch(event.request);
+      if (response && response.ok && (response.type === "basic" || response.type === "default")) {
+        const copy = response.clone();
+        caches.open(CACHE).then((cache) => cache.put(event.request, copy)).catch(() => {});
+      }
       return response;
-    })),
-  );
+    } catch {
+      const cached = await caches.match(event.request);
+      if (cached) return cached;
+      return new Response("", { status: 504, statusText: "Offline" });
+    }
+  })());
 });

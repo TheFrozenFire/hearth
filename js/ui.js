@@ -301,9 +301,10 @@ function paintGame(root, state) {
     ? `Play · ${state.preview.total}`
     : "Play word";
   const mine = state.myTurn;
+  const canScore = mine && state.dictReady;
   root.querySelector("#actions").innerHTML = `
-    <button type="button" class="btn primary play" data-act="play" ${mine ? "" : "disabled"}>${esc(playLabel)}</button>
-    ${state.preview && state.preview.reason === "unknown" ? `<button type="button" class="btn secondary wide" data-act="anyway">Play it anyway</button>` : ""}
+    <button type="button" class="btn primary play" data-act="play" ${canScore ? "" : "disabled"}>${esc(playLabel)}</button>
+    ${state.preview && state.preview.reason === "unknown" ? `<button type="button" class="btn secondary wide" data-act="anyway" ${canScore ? "" : "disabled"}>Play it anyway</button>` : ""}
     <button type="button" class="btn ghost" data-act="recall" ${mine && state.pending.length ? "" : "disabled"}>Recall</button>
     <button type="button" class="btn ghost" data-act="shuffle" ${mine ? "" : "disabled"}>Shuffle</button>
     <button type="button" class="btn ghost" data-act="swap" ${mine ? "" : "disabled"}>${state.exchanging ? "Cancel" : "Swap"}</button>
@@ -356,6 +357,64 @@ function paintSheet(root, state) {
   host.innerHTML = `<div class="sheet-back">${sheetHTML(state)}</div>`;
 }
 
+const BOARD_LIMIT = 15;
+
+function spotKey(spot) {
+  return `${spot.row}-${spot.col}`;
+}
+
+// Squares a dragged tile should jump to: the opening cross, the empty
+// squares beside tiles already on the board, or the next square in the
+// line being built this turn.
+export function snapSquares(locked, pending) {
+  const blocked = new Set([...locked, ...pending].map(spotKey));
+  const targets = new Set();
+  const add = (row, col) => {
+    if (row < 0 || col < 0 || row >= BOARD_LIMIT || col >= BOARD_LIMIT) return;
+    const key = `${row}-${col}`;
+    if (!blocked.has(key)) targets.add(key);
+  };
+  const beside = (row, col) => {
+    add(row - 1, col);
+    add(row + 1, col);
+    add(row, col - 1);
+    add(row, col + 1);
+  };
+
+  if (pending.length === 0 && locked.length === 0) {
+    for (let i = 0; i < BOARD_LIMIT; i++) {
+      add(7, i);
+      add(i, 7);
+    }
+    return targets;
+  }
+  if (pending.length === 0) {
+    for (const spot of locked) beside(spot.row, spot.col);
+    return targets;
+  }
+
+  const rows = new Set(pending.map((spot) => spot.row));
+  const cols = new Set(pending.map((spot) => spot.col));
+  if (rows.size === 1) {
+    const row = pending[0].row;
+    const placed = pending.map((spot) => spot.col);
+    const min = Math.min(...placed);
+    const max = Math.max(...placed);
+    for (let col = min - 1; col <= max + 1; col++) add(row, col);
+    if (pending.length === 1) beside(row, pending[0].col);
+  } else if (cols.size === 1) {
+    const col = pending[0].col;
+    const placed = pending.map((spot) => spot.row);
+    const min = Math.min(...placed);
+    const max = Math.max(...placed);
+    for (let row = min - 1; row <= max + 1; row++) add(row, col);
+    if (pending.length === 1) beside(pending[0].row, col);
+  } else {
+    for (const spot of pending) beside(spot.row, spot.col);
+  }
+  return targets;
+}
+
 export function createUI(root, handlers) {
   let screen = "";
   let pointer = null;
@@ -380,24 +439,74 @@ export function createUI(root, handlers) {
   }
 
   function moveFloater(node, event) {
+    node.classList.remove("snapped");
+    node.style.width = "52px";
+    node.style.height = "56px";
+    node.style.fontSize = "28px";
     node.style.left = `${event.clientX - 26}px`;
-    node.style.top = `${event.clientY - 36}px`;
+    node.style.top = `${event.clientY - 40}px`;
+  }
+
+  function seatFloater(node, snap) {
+    node.classList.add("snapped");
+    const rect = snap.el.getBoundingClientRect();
+    node.style.width = `${Math.max(8, rect.width - 2)}px`;
+    node.style.height = `${Math.max(8, rect.height - 2)}px`;
+    node.style.fontSize = `${Math.max(10, rect.width * 0.5)}px`;
+    node.style.left = `${rect.left + 1}px`;
+    node.style.top = `${rect.top + 1}px`;
+  }
+
+  function clearSnap() {
+    const marked = document.querySelector(".sq.snap");
+    if (marked) marked.classList.remove("snap");
   }
 
   function clearFloater() {
     const node = document.getElementById("drag-tile");
     if (node) node.remove();
+    clearSnap();
   }
 
-  function squareAt(x, y) {
-    const node = document.getElementById("drag-tile");
-    if (node) node.hidden = true;
-    const hit = document.elementFromPoint(x, y);
-    if (node) node.hidden = false;
-    const square = hit && hit.closest ? hit.closest("[data-sq]") : null;
-    if (!square) return null;
-    const [row, col] = square.dataset.sq.split("-").map(Number);
-    return { row, col };
+  function boardSpots(ignoreKey) {
+    const locked = [];
+    const pending = [];
+    for (const el of document.querySelectorAll("#board [data-sq]")) {
+      if (el.dataset.sq === ignoreKey) continue;
+      const [row, col] = el.dataset.sq.split("-").map(Number);
+      if (el.querySelector(".tile.locked")) locked.push({ row, col });
+      else if (el.querySelector(".tile.provisional")) pending.push({ row, col });
+    }
+    return { locked, pending };
+  }
+
+  function chooseSnap(x, y, ignoreKey) {
+    const { locked, pending } = boardSpots(ignoreKey);
+    const targets = snapSquares(locked, pending);
+    let preferred = null;
+    let under = null;
+    for (const el of document.querySelectorAll("#board [data-sq]")) {
+      const rect = el.getBoundingClientRect();
+      if (rect.width < 2) continue;
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      const dist = Math.hypot(x - cx, y - cy);
+      const [row, col] = el.dataset.sq.split("-").map(Number);
+      const info = { row, col, el, dist, size: rect.width };
+      const key = `${row}-${col}`;
+      const taken = key !== ignoreKey && el.querySelector(".tile.locked, .tile.provisional");
+      if (!taken && (!under || dist < under.dist)) under = info;
+      if (targets.has(key) && (!preferred || dist < preferred.dist)) preferred = info;
+    }
+    if (preferred && preferred.dist <= preferred.size * 0.85) return preferred;
+    if (under && under.dist <= under.size * 0.75) return under;
+    return null;
+  }
+
+  function showSnap(snap) {
+    const marked = document.querySelector(".sq.snap");
+    if (marked && (!snap || marked !== snap.el)) marked.classList.remove("snap");
+    if (snap) snap.el.classList.add("snap");
   }
 
   root.addEventListener("pointerdown", (event) => {
@@ -413,6 +522,7 @@ export function createUI(root, handlers) {
       x: event.clientX,
       y: event.clientY,
       moved: false,
+      snap: null,
       pointerId: event.pointerId,
     };
     if (tile && tile.setPointerCapture) tile.setPointerCapture(event.pointerId);
@@ -420,14 +530,25 @@ export function createUI(root, handlers) {
 
   root.addEventListener("pointermove", (event) => {
     if (!pointer || pointer.pointerId !== event.pointerId || pointer.id == null) return;
+    const node = pointer.moved ? document.getElementById("drag-tile") : null;
     if (!pointer.moved && Math.hypot(event.clientX - pointer.x, event.clientY - pointer.y) > 8) {
       pointer.moved = true;
-      const node = floater({ letter: pointer.letter });
-      moveFloater(node, event);
-    } else if (pointer.moved) {
-      const node = document.getElementById("drag-tile");
-      if (node) moveFloater(node, event);
+      const created = floater({ letter: pointer.letter });
+      moveFloater(created, event);
     }
+    const floaterNode = node || document.getElementById("drag-tile");
+    if (!pointer.moved || !floaterNode) return;
+    const ignore = pointer.fromBoard ? pointer.square : null;
+    const snap = chooseSnap(event.clientX, event.clientY, ignore);
+    const previous = pointer.snap ? `${pointer.snap.row}-${pointer.snap.col}` : "";
+    pointer.snap = snap ? { row: snap.row, col: snap.col } : null;
+    const next = pointer.snap ? `${pointer.snap.row}-${pointer.snap.col}` : "";
+    if (next !== previous && next && navigator.vibrate) {
+      try { navigator.vibrate(10); } catch { /* some browsers refuse a buzz */ }
+    }
+    showSnap(snap);
+    if (snap) seatFloater(floaterNode, snap);
+    else moveFloater(floaterNode, event);
   });
 
   function finishPointer(event) {
@@ -436,8 +557,7 @@ export function createUI(root, handlers) {
     pointer = null;
     clearFloater();
     if (info.id != null && info.moved) {
-      const square = squareAt(event.clientX, event.clientY);
-      if (square) handlers.place(info.id, square.row, square.col);
+      if (info.snap) handlers.place(info.id, info.snap.row, info.snap.col);
       else if (info.fromBoard) handlers.recall(info.id);
       return;
     }
