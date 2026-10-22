@@ -8,6 +8,7 @@ import {
   emptyBoard,
   POINTS,
   premiumAt,
+  rngFromSeed,
 } from "../js/engine.js";
 import { createGame, exchangeTiles, passTurn, playMove } from "../js/game.js";
 
@@ -43,6 +44,25 @@ test("the board has the usual bonus squares and the center star", () => {
   }
   assert.deepEqual(counts, { tw: 8, dw: 16, tl: 12, dl: 24, star: 1 });
   assert.equal(premiumAt(7, 7), "star");
+});
+
+test("a blank seed does not deal the same rack every time", () => {
+  assert.equal(rngFromSeed(null), null);
+  assert.equal(rngFromSeed(""), null);
+  assert.equal(rngFromSeed("   "), null);
+  assert.equal(rngFromSeed("nope"), null);
+  const fixed = createGame({ names: ["Mom", "Nell"], mode: "bot", rng: rngFromSeed("0") });
+  const again = createGame({ names: ["Mom", "Nell"], mode: "bot", rng: rngFromSeed("0") });
+  const stuck = fixed.players[0].rack.map((tile) => tile.letter).join("");
+  assert.equal(again.players[0].rack.map((tile) => tile.letter).join(""), stuck);
+  const seen = new Set();
+  for (let i = 0; i < 24; i++) {
+    const game = createGame({ names: ["Mom", "Nell"], mode: "bot" });
+    seen.add(game.players[0].rack.map((tile) => tile.letter).join(""));
+    seen.add(game.players[1].rack.map((tile) => tile.letter).join(""));
+  }
+  assert.ok(seen.size > 20, `only ${seen.size} different racks`);
+  assert.equal(seen.has(stuck), false);
 });
 
 test("the bag has 100 tiles and the standard counts", () => {

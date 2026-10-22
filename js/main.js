@@ -1,4 +1,4 @@
-import { analyze, shuffle } from "./engine.js";
+import { analyze, rngFromSeed, shuffle } from "./engine.js";
 import { createGame, exchangeTiles, passTurn, playMove } from "./game.js";
 import { createUI } from "./ui.js";
 
@@ -574,15 +574,7 @@ function loadSettings() {
 }
 
 function rngFromQuery() {
-  const seed = Number(new URLSearchParams(location.search).get("seed"));
-  if (!Number.isFinite(seed)) return Math.random;
-  let state = seed >>> 0;
-  return function random() {
-    state = (state + 0x6d2b79f5) | 0;
-    let value = Math.imul(state ^ (state >>> 15), 1 | state);
-    value = (value + Math.imul(value ^ (value >>> 7), 61 | value)) ^ value;
-    return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
-  };
+  return rngFromSeed(new URLSearchParams(location.search).get("seed")) || Math.random;
 }
 
 async function loadWords() {

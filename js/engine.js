@@ -64,6 +64,21 @@ export function createBag() {
   return tiles;
 }
 
+// A missing seed must stay random. Number(null) is 0, which would deal the
+// same rack every game.
+export function rngFromSeed(raw) {
+  if (raw == null || String(raw).trim() === "") return null;
+  const seed = Number(raw);
+  if (!Number.isFinite(seed)) return null;
+  let state = seed >>> 0;
+  return function random() {
+    state = (state + 0x6d2b79f5) | 0;
+    let value = Math.imul(state ^ (state >>> 15), 1 | state);
+    value = (value + Math.imul(value ^ (value >>> 7), 61 | value)) ^ value;
+    return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 export function shuffle(items, rng = Math.random) {
   for (let i = items.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1));
